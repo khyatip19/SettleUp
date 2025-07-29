@@ -33,6 +33,20 @@ public class UserController {
         return userService.createUser(user);
     }
 
+    @PutMapping("/{id}")
+    public ResponseEntity<User> updateUser(@PathVariable Long id, @RequestBody User user) {
+        return userService.getUserById(id)
+                .map(existingUser -> {
+                    existingUser.setName(user.getName());
+                    existingUser.setEmail(user.getEmail());
+                    if (user.getPassword() != null && !user.getPassword().isEmpty()) {
+                        existingUser.setPassword(user.getPassword());
+                    }
+                    return ResponseEntity.ok(userService.createUser(existingUser));
+                })
+                .orElse(ResponseEntity.notFound().build());
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteUser(@PathVariable Long id) {
         userService.deleteUser(id);

@@ -17,12 +17,14 @@ public class ExpenseService {
     private final GroupRepository groupRepository;
     private final UserRepository userRepository;
     private final SplitRepository splitRepository;
+    private final SplitService splitService;
 
-    public ExpenseService(ExpenseRepository expenseRepository, GroupRepository groupRepository, UserRepository userRepository, SplitRepository splitRepository) {
+    public ExpenseService(ExpenseRepository expenseRepository, GroupRepository groupRepository, UserRepository userRepository, SplitRepository splitRepository, SplitService splitService) {
         this.expenseRepository = expenseRepository;
         this.groupRepository = groupRepository;
         this.userRepository = userRepository;
         this.splitRepository = splitRepository;
+        this.splitService = splitService;
     }
 
     public List<Expense> getAllExpenses() {
@@ -45,23 +47,22 @@ public class ExpenseService {
     public Expense addExpense(Long groupId, Long paidById, BigDecimal amount, String description) {
         Group group = groupRepository.findById(groupId).orElseThrow();
         User paidBy = userRepository.findById(paidById).orElseThrow();
-        int memberCount = group.getMembers().size();
-        BigDecimal splitAmount = amount.divide(BigDecimal.valueOf(memberCount), BigDecimal.ROUND_HALF_UP);
-        Set<Split> splits = new HashSet<>();
-        for (User member : group.getMembers()) {
-            Split split = Split.builder()
-                    .user(member)
-                    .amount(splitAmount)
-                    .build();
-            splits.add(splitRepository.save(split));
-        }
+        
+        // Create the expense first
         Expense expense = Expense.builder()
                 .group(group)
                 .paidBy(paidBy)
                 .amount(amount)
                 .description(description)
-                .splits(splits)
+                .splits(new HashSet<>())
                 .build();
+        
+        expense = expenseRepository.save(expense);
+        
+        // Create splits using SplitService
+        Set<Split> splits = splitService.createEqualSplits(expense, group.getMembers());
+        expense.setSplits(splits);
+        
         return expenseRepository.save(expense);
     }
 } 
