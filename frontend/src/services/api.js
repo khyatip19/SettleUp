@@ -37,6 +37,7 @@ export const expensesAPI = {
     api.post('/expense/add', null, {
       params: { groupId, paidById, amount, description }
     }),
+  addExpenseFlexible: (expenseData) => api.post('/expense/flex', expenseData),
 };
 
 // Splits API

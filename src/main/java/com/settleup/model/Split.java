@@ -1,5 +1,6 @@
 package com.settleup.model;
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -21,16 +22,17 @@ public class Split {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "expense_id", nullable = false)
     @NotNull
+    @JsonBackReference
     private Expense expense;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.LAZY) 
     @JoinColumn(name = "user_id", nullable = false)
     @NotNull
     private User user;
 
     @Column(nullable = false, precision = 10, scale = 2)
     @NotNull
-    @Positive
+    @Positive // Ensure amount is positive
     private BigDecimal amount;
 
     @Enumerated(EnumType.STRING)
@@ -38,10 +40,10 @@ public class Split {
     @NotNull
     private SplitType splitType = SplitType.EQUAL;
 
-    @Enumerated(EnumType.STRING)
+    @Enumerated(EnumType.STRING) 
     @Column(name = "status", nullable = false)
     @NotNull
-    private SplitStatus status = SplitStatus.PENDING;
+    private SplitStatus status = SplitStatus.PENDING; 
 
     @Column(name = "created_at", nullable = false)
     @NotNull

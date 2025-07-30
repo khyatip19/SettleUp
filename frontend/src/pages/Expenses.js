@@ -2,6 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { CreditCard, Plus, Users, Split } from 'lucide-react';
 import { expensesAPI, groupsAPI, usersAPI } from '../services/api';
 
+const SPLIT_TYPES = [
+  { value: 'EQUAL', label: 'Equal' },
+  { value: 'PERCENTAGE', label: 'Percentage' },
+  { value: 'CUSTOM', label: 'Custom' },
+];
+
 const Expenses = () => {
   const [expenses, setExpenses] = useState([]);
   const [groups, setGroups] = useState([]);
@@ -15,10 +21,30 @@ const Expenses = () => {
     amount: '',
     description: ''
   });
+  const [splitType, setSplitType] = useState('EQUAL');
+  const [splitDetails, setSplitDetails] = useState([]);
+  const [formError, setFormError] = useState('');
 
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    // Reset split details when group or split type changes
+    if (formData.groupId) {
+      const group = groups.find(g => g.id === parseInt(formData.groupId));
+      if (group) {
+        setSplitDetails(group.members.map(member => ({
+          userId: member.id,
+          amount: '',
+          percentage: '',
+          name: member.name,
+        })));
+      }
+    } else {
+      setSplitDetails([]);
+    }
+  }, [formData.groupId, splitType, groups]);
 
   const fetchData = async () => {
     try {
@@ -39,21 +65,65 @@ const Expenses = () => {
     }
   };
 
+  const handleSplitDetailChange = (idx, field, value) => {
+    setSplitDetails(prev => prev.map((d, i) => i === idx ? { ...d, [field]: value } : d));
+  };
+
   const handleAddExpense = async (e) => {
     e.preventDefault();
+    setFormError('');
+    // Validation
+    if (splitType === 'PERCENTAGE') {
+      const percentages = splitDetails.map(d => parseFloat(d.percentage));
+      if (percentages.some(p => isNaN(p) || p <= 0)) {
+        setFormError('All percentages must be greater than 0.');
+        return;
+      }
+      const total = percentages.reduce((a, b) => a + b, 0);
+      if (Math.abs(total - 100) > 0.01) {
+        setFormError('Percentages must sum to 100.');
+        return;
+      }
+    } else if (splitType === 'CUSTOM') {
+      const amounts = splitDetails.map(d => parseFloat(d.amount));
+      if (amounts.some(a => isNaN(a) || a <= 0)) {
+        setFormError('All amounts must be greater than 0.');
+        return;
+      }
+      const total = amounts.reduce((a, b) => a + b, 0);
+      if (Math.abs(total - parseFloat(formData.amount)) > 0.01) {
+        setFormError('Custom amounts must sum to the total amount.');
+        return;
+      }
+    }
     try {
-      await expensesAPI.addExpense(
-        parseInt(formData.groupId),
-        parseInt(formData.paidById),
-        parseFloat(formData.amount),
-        formData.description
-      );
+      const splits = splitDetails.map(detail => {
+        if (splitType === 'EQUAL') {
+          return { userId: detail.userId };
+        } else if (splitType === 'PERCENTAGE') {
+          return { userId: detail.userId, percentage: parseFloat(detail.percentage) };
+        } else if (splitType === 'CUSTOM') {
+          return { userId: detail.userId, amount: parseFloat(detail.amount) };
+        }
+        return null;
+      });
+      const reqBody = {
+        groupId: parseInt(formData.groupId),
+        paidById: parseInt(formData.paidById),
+        amount: parseFloat(formData.amount),
+        description: formData.description,
+        splitType,
+        splits,
+      };
+      await expensesAPI.addExpenseFlexible(reqBody);
       setShowAddForm(false);
       setFormData({ groupId: '', paidById: '', amount: '', description: '' });
-      fetchData(); // Refresh the list
+      setSplitType('EQUAL');
+      setSplitDetails([]);
+      fetchData();
     } catch (err) {
       console.error('Add expense error:', err);
-      alert('Failed to add expense');
+      setFormError('Failed to add expense. Please check your input.');
     }
   };
 
@@ -119,6 +189,11 @@ const Expenses = () => {
               ✕
             </button>
           </div>
+          {formError && (
+            <div className="mb-4 text-red-600 bg-red-100 border border-red-200 rounded p-2">
+              {formError}
+            </div>
+          )}
           <form onSubmit={handleAddExpense} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -187,6 +262,82 @@ const Expenses = () => {
                 />
               </div>
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Split Type</label>
+              <select
+                value={splitType}
+                onChange={e => setSplitType(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+              >
+                {SPLIT_TYPES.map(type => (
+                  <option key={type.value} value={type.value}>{type.label}</option>
+                ))}
+              </select>
+            </div>
+            {splitType === 'EQUAL' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Split Equally Among</label>
+                <ul>
+                  {splitDetails.map((detail, idx) => (
+                    <li key={detail.userId} className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={true}
+                        readOnly
+                        className="mr-2"
+                      />
+                      <span>{detail.name}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {splitType === 'PERCENTAGE' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Enter Percentage for Each User</label>
+                <ul>
+                  {splitDetails.map((detail, idx) => (
+                    <li key={detail.userId} className="flex items-center space-x-2 mb-1">
+                      <span className="w-24">{detail.name}</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        value={detail.percentage}
+                        onChange={e => handleSplitDetailChange(idx, 'percentage', e.target.value)}
+                        className="w-24 px-2 py-1 border border-gray-300 rounded-md"
+                        placeholder="%"
+                        required
+                      />
+                      <span>%</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {splitType === 'CUSTOM' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Enter Amount for Each User</label>
+                <ul>
+                  {splitDetails.map((detail, idx) => (
+                    <li key={detail.userId} className="flex items-center space-x-2 mb-1">
+                      <span className="w-24">{detail.name}</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={detail.amount}
+                        onChange={e => handleSplitDetailChange(idx, 'amount', e.target.value)}
+                        className="w-24 px-2 py-1 border border-gray-300 rounded-md"
+                        placeholder="$"
+                        required
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div className="flex justify-end space-x-3">
               <button
                 type="button"

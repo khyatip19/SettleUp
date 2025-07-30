@@ -2,6 +2,7 @@ package com.settleup.controller;
 
 import com.settleup.model.Expense;
 import com.settleup.service.ExpenseService;
+import com.settleup.dto.AddExpenseRequest;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -47,5 +48,10 @@ public class ExpenseController {
                              @RequestParam BigDecimal amount,
                              @RequestParam String description) {
         return expenseService.addExpense(groupId, paidById, amount, description);
+    }
+
+    @PostMapping("/flex")
+    public Expense addExpenseFlexible(@RequestBody AddExpenseRequest request) {
+        return expenseService.addExpense(request);
     }
 } 

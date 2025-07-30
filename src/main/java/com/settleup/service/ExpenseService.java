@@ -2,6 +2,7 @@ package com.settleup.service;
 
 import com.settleup.model.*;
 import com.settleup.repository.*;
+import com.settleup.dto.AddExpenseRequest;
 
 import org.springframework.stereotype.Service;
 
@@ -63,6 +64,74 @@ public class ExpenseService {
         Set<Split> splits = splitService.createEqualSplits(expense, group.getMembers());
         expense.setSplits(splits);
         
+        return expenseRepository.save(expense);
+    }
+
+    public Expense addExpense(AddExpenseRequest request) {
+        Group group = groupRepository.findById(request.getGroupId()).orElseThrow();
+        User paidBy = userRepository.findById(request.getPaidById()).orElseThrow();
+
+        // Create the expense first
+        Expense expense = Expense.builder()
+                .group(group)
+                .paidBy(paidBy)
+                .amount(request.getAmount())
+                .description(request.getDescription())
+                .splits(new HashSet<>())
+                .build();
+        expense = expenseRepository.save(expense);
+
+        Set<Split> splits = new HashSet<>();
+        if (request.getSplitType() == Split.SplitType.EQUAL) {
+            // Equal split among all provided users
+            List<AddExpenseRequest.SplitDetail> splitDetails = request.getSplits();
+            int n = splitDetails.size();
+            BigDecimal total = request.getAmount();
+            BigDecimal equalAmount = total.divide(BigDecimal.valueOf(n), 2, BigDecimal.ROUND_HALF_UP);
+            for (AddExpenseRequest.SplitDetail detail : splitDetails) {
+                User user = userRepository.findById(detail.getUserId()).orElseThrow();
+                Split split = Split.builder()
+                        .expense(expense)
+                        .user(user)
+                        .amount(equalAmount)
+                        .splitType(Split.SplitType.EQUAL)
+                        .status(Split.SplitStatus.PENDING)
+                        .build();
+                splits.add(splitRepository.save(split));
+            }
+        } else if (request.getSplitType() == Split.SplitType.PERCENTAGE) {
+            // Split based on percentage
+            for (AddExpenseRequest.SplitDetail detail : request.getSplits()) {
+                User user = userRepository.findById(detail.getUserId()).orElseThrow();
+                BigDecimal userAmount = request.getAmount().multiply(BigDecimal.valueOf(detail.getPercentage() / 100.0));
+                userAmount = userAmount.setScale(2, BigDecimal.ROUND_HALF_UP);
+                Split split = Split.builder()
+                        .expense(expense)
+                        .user(user)
+                        .amount(userAmount)
+                        .splitType(Split.SplitType.PERCENTAGE)
+                        .status(Split.SplitStatus.PENDING)
+                        .build();
+                splits.add(splitRepository.save(split));
+            }
+        } else if (request.getSplitType() == Split.SplitType.CUSTOM) {
+            // Custom amount for each user
+            for (AddExpenseRequest.SplitDetail detail : request.getSplits()) {
+                User user = userRepository.findById(detail.getUserId()).orElseThrow();
+                Split split = Split.builder()
+                        .expense(expense)
+                        .user(user)
+                        .amount(detail.getAmount().setScale(2, BigDecimal.ROUND_HALF_UP))
+                        .splitType(Split.SplitType.CUSTOM)
+                        .status(Split.SplitStatus.PENDING)
+                        .build();
+                splits.add(splitRepository.save(split));
+            }
+        } else {
+            throw new IllegalArgumentException("Unsupported split type");
+        }
+
+        expense.setSplits(splits);
         return expenseRepository.save(expense);
     }
 } 
